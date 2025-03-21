@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -11,9 +11,7 @@ public class Protagonist : MonoBehaviour
 
 	private Vector2 _inputVector;
 	private float _previousSpeed;
-
-	// For the slime/bush hopping bug: sets the max distance between player and object allowed when colliders clip
-	public float maxDistance = 0.5f;
+	private double _lastHitTime = double.NegativeInfinity;
 
 	//These fields are read and manipulated by the StateMachine actions
 	[NonSerialized] public bool jumpInput;
@@ -33,7 +31,29 @@ public class Protagonist : MonoBehaviour
 
 	private void OnControllerColliderHit(ControllerColliderHit hit)
 	{
-		lastHit = hit;
+		bool isHitAccepted = false;
+		double time = Time.timeAsDouble;
+		if (_lastHitTime < time)
+		{
+			// New hit is in new frame, discard our outdated hit
+			isHitAccepted = true;
+		}
+		else
+		{
+			// Its the same frame, let's decide which hit to keep
+			if (lastHit.normal.y < hit.normal.y)
+			{
+				// New hit is pointing more upwards, more likely a floor hit
+				// We should prioritize floor hits over wall hits
+				isHitAccepted = true;
+			}
+		}
+
+		if(isHitAccepted)
+		{
+			lastHit = hit;
+			_lastHitTime = time;
+		}
 	}
 
 	//Adds listeners for events being triggered in the InputReader script
@@ -112,6 +132,26 @@ public class Protagonist : MonoBehaviour
 		_previousSpeed = targetSpeed;
 	}
 
+	// Ensure that player does not get stuck in corners/edges of rocks
+	void OnCollisionEnter(Collision collisionInfo)
+    {
+        if (collisionInfo.gameObject.name.Contains("rock") ||
+			collisionInfo.gameObject.name.Contains("Rock")){
+			
+			// While colliding with a rock, increase character controller slope limit
+			GetComponent<CharacterController>().slopeLimit = 90;
+		}
+    }
+	void OnCollisionExit(Collision collisionInfo)
+	{
+		if (collisionInfo.gameObject.name.Contains("rock") ||
+			collisionInfo.gameObject.name.Contains("Rock")){
+			
+			// After colliding with a rock, decrease character controller slope limit
+			GetComponent<CharacterController>().slopeLimit = 50;
+		}
+	}
+
 	//---- EVENT LISTENERS ----
 
 	private void OnMove(Vector2 movement)
@@ -139,27 +179,4 @@ public class Protagonist : MonoBehaviour
 
 	// Triggered from Animation Event
 	public void ConsumeAttackInput() => attackInput = false;
-
-	//---- Slime/bush hopping fail-safe ----
-    private void OnCollisionStay(Collision collision)
-    {
-		// If the player has continued contact with a critter or bush object
-        if (collision.gameObject.tag == "Critter" || collision.gameObject.tag == "Bush")
-        {
-			// Calculates the distance between the player and the object
-            float distance = Vector3.Distance(collision.gameObject.transform.position, this.transform.position);
-			// Checks if colliders are clipping
-            if (distance <= maxDistance)
-            {
-				// Calculates the direction between the player and object
-                Vector3 direction = collision.gameObject.transform.position - this.transform.position;
-				// Sets vertical direction to 0, to prevent hopping
-                direction.y = 0f;
-
-                // Calculates new position for player to move outside of clipped collider based on direction
-                Vector3 newPos = this.transform.position + direction.normalized * (maxDistance - distance);
-				this.transform.position = Vector3.Lerp(this.transform.position, newPos, Time.deltaTime);
-            }
-        }
-    }
 }
